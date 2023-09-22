@@ -1,0 +1,2 @@
+VERSION = 'v0.1'
+MODEL_NAME = 'Default(GPT3.5)'
