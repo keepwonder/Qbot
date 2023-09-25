@@ -1,3 +1,4 @@
+import pandas as pd
 import streamlit as st
 from configs import *
 from langchain.schema import (
@@ -6,9 +7,13 @@ from langchain.schema import (
     SystemMessage
 )
 from langchain.chat_models import ChatOpenAI
-
-import pandas as pd
-
+from langchain.chains import ConversationChain
+from langchain.memory import (
+    ConversationBufferMemory,
+    ConversationBufferWindowMemory,
+    ConversationSummaryMemory,
+    ConversationSummaryBufferMemory
+)
 
 st.set_page_config(
     page_title="Welcome to Qbot!",
@@ -24,21 +29,46 @@ if 'temperature' not in st.session_state:
     st.session_state['temperature'] = 0
 
 if 'max_tokens' not in st.session_state:
-    st.session_state['max_tokens'] = 1024
+    st.session_state['max_tokens'] = MAX_TOKEN
+
+if 'history_len' not in st.session_state:
+    st.session_state['history_len'] = HISTORY_LEN
+    print('history_len1111:', st.session_state['history_len'])
  
+if 'responses' not in st.session_state:
+    st.session_state['responses'] = []
+
+if 'requests' not in st.session_state:
+    st.session_state['requests'] = []
+
+
 if 'OPENAI_API_KEY' not in st.session_state:
     st.session_state['OPENAI_API_KEY'] = ''
 
 elif st.session_state["OPENAI_API_KEY"] != "":
+
+    if 'buffer_memory' not in st.session_state:
+        print('history_len222:', st.session_state['history_len'])
+        st.session_state['buffer_memory']= ConversationBufferWindowMemory(k=st.session_state['history_len'])
+
+    # with no history 
     chat = ChatOpenAI(openai_api_key=st.session_state["OPENAI_API_KEY"], temperature=st.session_state['temperature'], max_tokens=st.session_state['max_tokens'])
 
+    # with chat history
+    conversation = ConversationChain(
+        llm=chat,
+        memory=st.session_state['buffer_memory'],
+        verbose=True
+    )
+    
 
 chat_input_placeholder = "请输入对话内容，换行请使用Shift+Enter "
 prompt = st.chat_input(chat_input_placeholder, key='prompt')
-print(f'prompt:{prompt}')
-print(f'temperature:{st.session_state["temperature"]}')
-print(f'max tokens:{st.session_state["max_tokens"]}')
-print(f'API key: {st.session_state["OPENAI_API_KEY"]}')
+# print(f'prompt:{prompt}')
+# print(f'temperature:{st.session_state["temperature"]}')
+# print(f'max tokens:{st.session_state["max_tokens"]}')
+# print(f'API key: {st.session_state["OPENAI_API_KEY"]}')
+print(f'history_len:{st.session_state["history_len"]}')
 
 
 if chat:
@@ -55,10 +85,22 @@ if chat:
             st.session_state["messages"].append(HumanMessage(content=prompt))
             with st.chat_message("user"):
                 st.markdown(prompt)
-            ai_message = chat([HumanMessage(content=prompt)])
-            st.session_state["messages"].append(ai_message)
+
+            # 1. no memory   
+            # ai_message = chat([HumanMessage(content=prompt)])
+            # st.session_state["messages"].append(ai_message)
+
+            # 2. with memory
+            ai_message = conversation(prompt)
+            st.session_state['messages'].append(AIMessage(content=ai_message['response']))
+
+            st.session_state.requests.append(prompt)
+            st.session_state.responses.append(ai_message['response'])
+
             with st.chat_message("assistant"):
-                st.markdown(ai_message.content)
+                print(ai_message)
+                # st.markdown(ai_message.content)
+                st.markdown(ai_message['response'])
 else:
     with st.container():
         st.warning('Please set your OpenAI API key first!')
@@ -78,12 +120,12 @@ def export_records():
 def get_messages_df():
     msgs = []
     messages = st.session_state['messages']
+    print(f'messages:{messages}')
     for i in range(0, len(messages), 2):
         msg = []
         msg.append(messages[i].content)
         msg.append(messages[i+1].content)
-        msgs.append(msg)
-        
+        msgs.append(msg) 
 
     print('msgs：', msgs)
     return pd.DataFrame(msgs, columns=['HumanMessage', 'AIMessage'])
@@ -116,6 +158,8 @@ with st.sidebar:
         st.session_state['max_tokens'] = max_tokens
 
     history_len = st.number_input("历史对话轮数：", 0, 10, 3) 
+    if history_len:
+        st.session_state['history_len'] = history_len
 
     col1, col2 = st.columns(2)
     with col1:
